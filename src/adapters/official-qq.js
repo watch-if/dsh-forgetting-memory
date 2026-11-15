@@ -114,6 +114,20 @@ export function renderOfficialQqMemoryContext(memory, message, { maxChars } = {}
 }
 
 /**
+ * Add retrieved memories to the current user message only. DSH dynamic prompt
+ * contexts are durable snapshots in session history, so retrieval results are
+ * composed into the turn instead of registered as a new prompt-context snapshot.
+ * The host should call this only after it has decided to start an Agent turn.
+ */
+export function composeOfficialQqTurnText(memory, message, userText, { maxChars } = {}) {
+  const body = typeof userText === 'string' ? userText : ''
+  const memoryText = renderOfficialQqMemoryContext(memory, message, { maxChars })
+  if (!memoryText) return body
+  if (!body) return memoryText
+  return `${memoryText}\n\n[本轮 QQ 消息]\n${body}`
+}
+
+/**
  * Stage messages known by a QQ bridge to have been replayed after a disconnect.
  * The MemoryEngine applies its configured offline TTL; user review is still
  * required before these messages enter the regular memory pipeline.
