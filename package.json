@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "main": "./index.js",
-  "exports": { ".": "./index.js", "./package.json": "./package.json" },
+  "exports": {
+    ".": "./index.js",
+    "./adapters/official-qq": "./src/adapters/official-qq.js",
+    "./package.json": "./package.json"
+  },
   "keywords": ["dsh-plugin", "memory", "qq", "forgetting"],
   "files": ["index.js", "src", "README.md", "docs"],
   "engines": { "node": ">=22" },
