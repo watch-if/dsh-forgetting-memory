@@ -45,19 +45,24 @@ if (forgettingMemory) {
 
 ## 接入按需检索
 
-只有准备创建 Agent 回合时才检索。桥接层根据本轮消息构建上下文：
+只有准备创建 Agent 回合时才检索，并把摘要并入这条用户消息。调用位置在 `handleInbound` 通过门控、完成正文组装之后，创建 `UserMessage` 之前：
 
-```js
-import { renderOfficialQqMemoryContext } from 'dsh-forgetting-memory/adapters/official-qq'
+```ts
+import { composeOfficialQqTurnText } from 'dsh-forgetting-memory/adapters/official-qq'
 
-const memoryText = renderOfficialQqMemoryContext(forgettingMemory, msg, {
+const turnBody = composeOfficialQqTurnText(forgettingMemory, msg, agentBody, {
   maxChars: 1200,
 })
+const message = createUserMessage({
+  content: [{ type: 'text', text: turnBody }],
+  source: { kind: 'user' },
+})
+record.agent.followup(message)
 ```
 
-将 `memoryText` 放入该轮的 DSH `systemPrompt.context()`，不要拼进用户正文。`dsh-qqbot` 的 `QQTurnContext` / `turnContext()` 是合适的挂点：增加一个 `memoryText` 字段，在 `installQQPrompt` 中注册一条 `interpolate: false` 的动态 context。确保该值只属于当前已认领的入站消息；排队消息和后续回合应返回空串。
+不要为每轮检索结果额外注册一条 DSH `systemPrompt.context()`。DSH 会把动态 context 的完整快照写入会话历史；卸载注册项不会删除已经记录的快照。合并到当前入站消息可以避免每轮另造一条动态快照，但检索出的文字仍属于该轮历史，可能被 DSH 的会话压缩摘要吸收。`maxChars` 是字符上限，不是精确 token 上限。
 
-检索只匹配当前 scope 内的摘要并受字符预算限制。完整日记正文仍需后续通过日记 ID 显式读取。当前核心的检索索引仍需完善，见项目 README 中的待办。
+检索只匹配当前 scope 内的摘要，完整日记正文仍需后续通过日记 ID 显式读取。当前核心的检索索引仍需完善，见项目 README 中的待办。
 
 ## 离线恢复
 
