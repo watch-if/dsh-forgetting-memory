@@ -1,0 +1,12 @@
+{
+  "name": "dsh-forgetting-memory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": { ".": "./index.js", "./package.json": "./package.json" },
+  "keywords": ["dsh-plugin", "memory", "qq", "forgetting"],
+  "files": ["index.js", "src", "README.md", "docs"],
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test" }
+}

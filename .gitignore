@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+.nyc_output/
+.dsh/
+memory-data/
+state.json
+inbox.jsonl
+forgotten.jsonl
+*.tmp
