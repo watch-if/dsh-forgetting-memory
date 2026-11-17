@@ -56,31 +56,72 @@ function searchTerms(value) {
 }
 
 function memePhrase(text, scope, lexicon) {
-  const entries = [...(Array.isArray(lexicon?.['*']) ? lexicon['*'] : []), ...(Array.isArray(lexicon?.[scope]) ? lexicon[scope] : [])]
-  return entries.find(entry => typeof entry === 'string' && entry.trim() && normalized(text).includes(normalized(entry)))
+  const candidates = []
+  const add = source => {
+    if (Array.isArray(source)) {
+      for (const value of source) {
+        if (typeof value === 'string' && value.trim()) candidates.push({ canonical: value.trim(), aliases: [value.trim()] })
+      }
+      return
+    }
+    if (!source || typeof source !== 'object') return
+    for (const [canonical, definition] of Object.entries(source)) {
+      const aliases = typeof definition === 'string'
+        ? [definition]
+        : Array.isArray(definition)
+          ? definition
+          : Array.isArray(definition?.aliases)
+            ? definition.aliases
+            : []
+      const clean = aliases.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim())
+      const label = typeof definition?.label === 'string' && definition.label.trim() ? definition.label.trim() : canonical.trim()
+      if (label && clean.length) candidates.push({ canonical: label, aliases: [...new Set([label, ...clean])] })
+    }
+  }
+  add(lexicon?.['*'])
+  add(lexicon?.[scope])
+  candidates.sort((a, b) => Math.max(...b.aliases.map(x => x.length)) - Math.max(...a.aliases.map(x => x.length)))
+  const body = normalized(text)
+  for (const candidate of candidates) {
+    const phrase = candidate.aliases.find(alias => body.includes(normalized(alias)))
+    if (phrase) return { canonical: candidate.canonical, phrase }
+  }
+  return null
 }
 
 function localClassification(text) {
-  const value = String(text || '')
-  if (/(听说|据说|传闻|小道消息|有人说)/.test(value)) return { kind: 'rumor', confidence: 0.65, importance: 0.35 }
-  if (/(我保证|我答应你|我承诺|我一定会|说好了我|答应你)/.test(value)) return { kind: 'commitment', confidence: 0.84, importance: 0.78 }
-  if (/(请不要|别再|不允许|我的底线是|不要再对我)/.test(value)) return { kind: 'boundary', confidence: 0.84, importance: 0.82 }
+  const value = String(text || '').trim()
+  if (!value) return null
+  if (/(听说|据说|传闻|小道消息|有人说|网传)/.test(value)) return { kind: 'rumor', confidence: 0.72, importance: 0.3 }
+  if (/(我的底线是|请不要|别再|不允许|不要再对我|我不接受|未经同意不要)/.test(value)) return { kind: 'boundary', confidence: 0.9, importance: 0.9 }
+  if (/(我保证|我答应你|我承诺|我一定会|说好了我|答应你|我会负责)/.test(value)) return { kind: 'commitment', confidence: 0.88, importance: 0.82 }
+  if (/(我的长期目标是|长期目标是|我计划长期|我打算长期|我一直想要|我的目标是)/.test(value)) return { kind: 'goal', confidence: 0.84, importance: 0.8 }
+  if (/(以后请|以后别|我更喜欢|我比较喜欢|我不喜欢|我喜欢)/.test(value)) return { kind: 'preference', confidence: 0.82, importance: 0.72 }
+  if (/(开个玩笑|开玩笑的|逗你玩|逗你呢|纯属玩笑|整活|玩梗|这个梗|笑死|哈哈{2,}|呵呵{2,}|xswl|233{2,}|😂|🤣)/i.test(value)) {
+    return { kind: 'joke', confidence: 0.68, importance: 0.12 }
+  }
+  if (/^(哈哈+|呵呵+|hhh+|xswl|笑死|233+|😂+|🤣+)$/i.test(value)) {
+    return { kind: 'joke', confidence: 0.62, importance: 0.1 }
+  }
   return null
 }
 
 function periodSummary(records, maxChars) {
-  const parts = []
-  const seen = new Set()
+  const weight = { boundary: 6, commitment: 5.8, goal: 5.5, preference: 5.2, person: 4.8, event: 3.5, rumor: 2.5, unknown: 1.5, joke: 1 }
+  const unique = new Map()
   for (const record of records) {
-    const label = record.kind === 'joke' ? '群梗：' + record.summary : record.summary
-    const key = normalized(label)
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    parts.push(label)
-    if (parts.length >= 4) break
+    const summary = String(record.summary || '').trim()
+    const key = normalized(summary)
+    if (!key) continue
+    const priority = weight[record.kind] || 1
+    const old = unique.get(key)
+    if (!old || priority > old.priority) unique.set(key, { summary, kind: record.kind, priority, importance: Number(record.importance) || 0 })
   }
-  const head = records.length + ' 条消息'
-  const result = parts.length ? head + '：' + parts.join('；') : head + '（没有可压缩的摘要）'
+  const selected = [...unique.values()]
+    .sort((a, b) => (b.priority + b.importance) - (a.priority + a.importance) || b.summary.length - a.summary.length)
+    .slice(0, 4)
+    .map(record => record.kind === 'joke' ? '群梗候选：' + record.summary : record.summary)
+  const result = records.length + ' 条消息' + (selected.length ? '，本段提要：' + selected.join('；') : '（没有可压缩的摘要）')
   return result.slice(0, Math.max(32, maxChars))
 }
 
@@ -108,12 +149,15 @@ function freshState(ownerId) {
 }
 
 export class MemoryEngine {
-  constructor({ dataDir, ownerId, classify, now = Date.now, configProvider, ...config }) {
+  constructor({ dataDir, ownerId, classify, summarizePeriod, semanticRecall, countTokens, now = Date.now, configProvider, ...config }) {
     if (!dataDir || typeof dataDir !== 'string') throw new TypeError('dataDir is required')
     if (!ownerId || typeof ownerId !== 'string') throw new TypeError('ownerId is required')
     this.dataDir = dataDir
     this.ownerId = ownerId
     this.classify = classify || (async () => ({ kind: 'unknown' }))
+    this.summarizePeriod = typeof summarizePeriod === 'function' ? summarizePeriod : null
+    this.semanticRecall = typeof semanticRecall === 'function' ? semanticRecall : null
+    this.countTokens = typeof countTokens === 'function' ? countTokens : null
     this.now = now
     this.configProvider = configProvider
     const baseConfig = { ...DEFAULTS, ...config }
@@ -385,7 +429,20 @@ export class MemoryEngine {
       periods.get(key).push(entry)
     }
     for (const entries of periods.values()) {
-      const text = periodSummary(entries.map(x => ({ summary: x.summary, kind: x.kind })), this.config.archiveSummaryChars)
+      const messages = entries.map(({ item, memory }) => ({
+        text: item.text, summary: memory.summary, kind: memory.kind, importance: memory.importance || 0,
+      }))
+      const fallback = periodSummary(messages, this.config.archiveSummaryChars)
+      let text = fallback
+      if (this.summarizePeriod) {
+        try {
+          const result = await this.summarizePeriod({
+            scope: entries[0].item.scope, messages, fallback,
+            maxChars: this.config.archiveSummaryChars,
+          })
+          if (typeof result === 'string' && result.trim()) text = result.trim().slice(0, this.config.archiveSummaryChars)
+        } catch {}
+      }
       for (const { memory } of entries) memory.periodSummary = text
     }
     const coreIds = new Set(this.relationships(at).filter(x => x.core).map(x => x.id))
@@ -409,12 +466,13 @@ export class MemoryEngine {
     const local = localClassification(item.text)
     const meme = memePhrase(item.text, item.scope, this.config.memeLexicon)
     let kind = KINDS.has(supplied.kind) ? supplied.kind : 'unknown'
-    if (kind === 'unknown' && local) kind = local.kind
+    if (local && DURABLE.has(local.kind)) kind = local.kind
+    else if (kind === 'unknown' && local) kind = local.kind
     const textKey = normalized(item.text)
     const nearby = this.state.memories.find(x => x.scope === item.scope && x.authorId === item.authorId && x.textKey === textKey && item.at - x.lastAt <= this.config.intervalMs)
     if (nearby && textKey.length <= 12 && !DURABLE.has(kind)) kind = 'joke'
     if (meme && !DURABLE.has(kind) && kind !== 'rumor') kind = 'joke'
-    const key = String(supplied.key || textKey).slice(0, 120)
+    const key = String(supplied.key || (meme ? 'meme:' + normalized(meme.canonical) : textKey)).slice(0, 120)
     const communal = kind === 'joke' || kind === 'rumor'
     const scopedKey = communal
       ? item.scope + '\u0000' + kind + '\u0000' + key
@@ -425,7 +483,8 @@ export class MemoryEngine {
       : (local && local.kind === kind ? local.confidence : (meme && kind === 'joke' ? 0.55 : 0))
     const durable = DURABLE.has(kind) && confidence >= 0.8
     const visibility = item.scope.startsWith('private:') ? 'private' : 'group'
-    const summary = String(supplied.summary || item.text).trim().slice(0, durable ? 240 : 180)
+    const fallbackSummary = meme && kind === 'joke' ? '群梗候选「' + meme.canonical + '」' : item.text
+    const summary = String(supplied.summary || fallbackSummary).trim().slice(0, durable ? 240 : 180)
     const importance = Number.isFinite(supplied.importance) ? Math.max(0, Math.min(1, supplied.importance)) : (local?.importance ?? 0.5)
     if (existing) {
       if (kind === 'joke') {
@@ -434,6 +493,7 @@ export class MemoryEngine {
         if (!existing.jokeAuthors.includes(item.authorId)) existing.jokeAuthors.push(item.authorId)
         existing.jokeAuthors = existing.jokeAuthors.slice(-20)
         existing.score = Math.min(0.9, existing.score + (existing.jokeAuthors.length > 1 ? 0.04 : 0.01))
+        existing.memeKey ||= meme?.canonical
       } else if (kind === 'rumor') {
         existing.rumorSources ||= []
         if (!existing.rumorSources.includes(item.authorId)) existing.rumorSources.push(item.authorId)
@@ -445,10 +505,13 @@ export class MemoryEngine {
         existing.lastReinforcedAt = item.at
       }
       existing.lastAt = Math.max(existing.lastAt, item.at)
-      existing.summary = summary
+      existing.summary = kind === 'joke' && (meme?.canonical || existing.memeKey)
+        ? '群梗候选「' + (meme?.canonical || existing.memeKey) + '」' + (existing.jokeUses > 1 ? '（' + existing.jokeUses + ' 次，' + (existing.jokeAuthors?.length || 1) + ' 人）' : '')
+        : summary
+      existing.importance = Math.max(Number(existing.importance) || 0, importance)
       const oldDetail = String(existing.detail || '')
       existing.detail = (oldDetail ? oldDetail + '\n' : '') .concat(item.text).slice(-this.config.maxDiaryChars)
-      existing.clue = String(supplied.clue || existing.clue || summary).slice(0, 80)
+      existing.clue = String(supplied.clue || (meme ? '群梗 ' + meme.canonical : existing.clue || summary)).slice(0, 80)
       existing.textKey = textKey
       existing.kind = kind
       existing.visibility = visibility
@@ -462,7 +525,8 @@ export class MemoryEngine {
     const memory = {
       id: randomUUID(), sourceId: item.id, occurredAt: item.at, lastAt: item.at,
       lastDecayAt: item.at, authorId: kind === 'joke' || kind === 'rumor' ? null : item.authorId,
-      scope: item.scope, visibility, textKey, scopedKey, kind, summary,
+      scope: item.scope, visibility, textKey, scopedKey, kind, summary, importance,
+      memeKey: meme?.canonical,
       score: kind === 'joke' ? 0.35 : kind === 'rumor' ? 0.3 : 0.45 + 0.25 * importance,
       detail: item.text.slice(-this.config.maxDiaryChars),
       clue: String(supplied.clue || summary).slice(0, 80),
@@ -533,7 +597,7 @@ export class MemoryEngine {
     return String(memory.detail || memory.summary).slice(0, Math.floor(Math.min(maxChars, this.config.maxDiaryChars)))
   }
 
-  retrieve({ query, scope, maxChars = this.config.maxRecallChars, maxTokens = this.config.memoryTokenBudget, layers } = {}) {
+  retrieve({ query, scope, maxChars = this.config.maxRecallChars, maxTokens = this.config.memoryTokenBudget, layers, semanticIds = [] } = {}) {
     this.#assertOpen()
     if (!scope || typeof scope !== 'string') throw new TypeError('scope is required')
     if (!Number.isFinite(maxChars) || maxChars < 0) throw new RangeError('maxChars must be nonnegative')
@@ -542,7 +606,8 @@ export class MemoryEngine {
     if (terms.length === 0 || maxChars === 0 || maxTokens === 0) return []
     const allowedLayers = new Set(layers || ['hippocampus', 'notebook', 'diary'])
     const scopeIndex = this.scopedSearchIndex?.get(scope) || new Map()
-    const candidateIds = new Set()
+    const candidateIds = new Set(Array.isArray(semanticIds) ? semanticIds.filter(id => typeof id === 'string') : [])
+    const semanticSet = new Set(candidateIds)
     for (const term of terms) {
       for (const id of scopeIndex.get(term) || []) candidateIds.add(id)
     }
@@ -564,7 +629,8 @@ export class MemoryEngine {
       const recency = 1 / (1 + ageDays / 30)
       const layerBonus = memory.layer === 'notebook' ? 1.2 : memory.layer === 'hippocampus' ? 0.6 : 0
       const uncertaintyPenalty = memory.kind === 'rumor' && !memory.corroboratedByMultiple ? 0.45 : 0
-      const score = relevance * (0.6 + Math.min(0.4, memory.score * 0.4)) + recency * 0.3 + layerBonus - uncertaintyPenalty
+      const semanticBonus = semanticSet.has(id) ? 0.75 : 0
+      const score = relevance * (0.6 + Math.min(0.4, memory.score * 0.4)) + recency * 0.3 + layerBonus + semanticBonus - uncertaintyPenalty
       return { memory, score }
     }).filter(Boolean).sort((a, b) => b.score - a.score || b.memory.lastAt - a.memory.lastAt)
     const result = []
@@ -577,11 +643,11 @@ export class MemoryEngine {
       if (memory.kind === 'rumor') prefix = memory.corroboratedByMultiple ? '多人提及，仍待确认' : '未证实传闻'
       const line = prefix + '：' + memory.summary
       const allowedByChars = line.slice(0, charsLeft)
-      const tokenCost = estimateTokens(allowedByChars)
+      const tokenCost = this.#tokenCost(allowedByChars)
       if (tokenCost > tokensLeft) {
         const ratio = tokensLeft / Math.max(1, tokenCost)
         let clipped = allowedByChars.slice(0, Math.max(1, Math.floor(allowedByChars.length * ratio)))
-        while (clipped && estimateTokens(clipped) > tokensLeft) clipped = clipped.slice(0, -1)
+        while (clipped && this.#tokenCost(clipped) > tokensLeft) clipped = clipped.slice(0, -1)
         if (clipped) result.push(clipped)
         break
       }
@@ -590,6 +656,30 @@ export class MemoryEngine {
       tokensLeft -= tokenCost
     }
     return result
+  }
+
+  #tokenCost(text) {
+    try {
+      const exact = this.countTokens?.(text)
+      if (Number.isFinite(exact) && exact >= 0) return Math.ceil(exact)
+    } catch {}
+    return estimateTokens(text)
+  }
+
+  async retrieveAsync(options = {}) {
+    if (!this.semanticRecall) return this.retrieve(options)
+    try {
+      const result = await this.semanticRecall({
+        query: options.query, scope: options.scope,
+        limit: Math.max(1, Math.min(50, Number(options.semanticLimit) || 12)),
+      })
+      const ids = Array.isArray(result)
+        ? result.map(item => typeof item === 'string' ? item : item?.id).filter(id => typeof id === 'string')
+        : []
+      return this.retrieve({ ...options, semanticIds: ids })
+    } catch {
+      return this.retrieve(options)
+    }
   }
 
   async forgottenRecords({ limit = 100, offset = 0 } = {}) {
@@ -682,6 +772,25 @@ export class MemoryEngine {
       this.#rebuildSearchIndex()
       return true
     })
+  }
+
+  forgettingProjection({ score = 0.7, reinforcements = 0 } = {}) {
+    const initial = Math.max(0, Math.min(1, Number(score) || 0))
+    const count = Math.max(0, Math.min(6, Math.floor(Number(reinforcements) || 0)))
+    const halfLifeMs = this.config.halfLifeMs * (1 + 2 * count)
+    const daysUntil = threshold => {
+      if (initial <= threshold || threshold <= 0) return 0
+      return halfLifeMs * Math.log2(initial / threshold) / (24 * 60 * MINUTE)
+    }
+    return {
+      formula: 'score(t) = score0 × 2^(-t / (halfLife × (1 + 2 × min(6, reinforcements))))',
+      initialScore: initial,
+      reinforcements: count,
+      effectiveHalfLifeDays: halfLifeMs / (24 * 60 * MINUTE),
+      daysToCorner: daysUntil(this.config.cornerThreshold),
+      daysToForget: daysUntil(this.config.forgetThreshold),
+      configuredHalfLifeDays: this.config.halfLifeMs / (24 * 60 * MINUTE),
+    }
   }
 
   warnings() {
