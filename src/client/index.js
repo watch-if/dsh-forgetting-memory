@@ -77,7 +77,7 @@ function MemoryAdminCard(props) {
     setError('')
     setNotice('')
     try {
-      const result = await request({ action, ids: [...selected], status })
+      const result = await request({ action, ids: [...selected], status, pinned: status })
       setNotice(action === 'sleep'
         ? '休眠整理已完成，处理 ' + (result.processed || 0) + ' 条消息。'
         : action === 'corner'
@@ -114,6 +114,7 @@ function MemoryAdminCard(props) {
       ['corner', '日记角落'],
       ['diary', '日记'],
       ['notebook', '笔记'],
+      ['relationships', '关系圈'],
     ].map(([id, label]) => button(label, () => {
       setView(id); setOffset(0); setSelected(new Set()); setExpanded({}); void refresh(0, id)
     }, false, view === id)),
@@ -132,6 +133,11 @@ function MemoryAdminCard(props) {
       button('标记完成', () => { void act('setNotebookStatus', 'completed') }, selected.size === 0),
       button('取消任务', () => { void act('setNotebookStatus', 'cancelled') }, selected.size === 0),
       button('重新激活', () => { void act('setNotebookStatus', 'active') }, selected.size === 0),
+    )
+  } else if (view === 'relationships') {
+    toolbar = el('div', null,
+      button('加入核心关系', () => { void act('pinRelation', true) }, selected.size === 0),
+      button('移出核心关系', () => { void act('pinRelation', false) }, selected.size === 0),
     )
   } else {
     toolbar = el('div', null,
@@ -153,6 +159,7 @@ function MemoryAdminCard(props) {
         el('strong', null, new Date(row.occurredAt || 0).toLocaleString()),
         el('span', { style: { marginLeft: 8, opacity: 0.7 } }, row.scope || ''),
         row.status ? el('span', { style: { marginLeft: 8, opacity: 0.7 } }, '状态：' + row.status) : null,
+        row.interactions ? el('span', { style: { marginLeft: 8, opacity: 0.7 } }, '跨时段互动：' + row.interactions) : null,
       ),
       el('div', { style: { whiteSpace: 'pre-wrap', margin: '4px 0 0 24px' } }, row.summary || '（无摘要）'),
       view === 'diary' ? button(expanded[row.id] ? '收起全文' : '展开日记全文', () => {
@@ -173,6 +180,12 @@ function MemoryAdminCard(props) {
     el('p', null, '遗忘记录文件：', data?.forgottenPath || '读取中…'),
     ...(data?.warnings || []).map((warning, index) => el('p', { key: 'warning-' + index, role: 'status', style: { color: 'var(--dsw-alias-warning, #9a6700)' } }, warning)),
     el('p', { style: { opacity: 0.72 } }, '遗忘文件保存每个整理时间段的总体短摘要，不参与 AI 自动检索。转入角落也只转入这条摘要；日记详情按需展开。'),
+    data?.forgettingProjection ? el('details', null,
+      el('summary', null, '查看遗忘曲线预估'),
+      el('p', null, '默认权重 0.7、没有再次强化：约 ' + data.forgettingProjection.daysToCorner.toFixed(1) + ' 天进入日记角落，约 ' + data.forgettingProjection.daysToForget.toFixed(1) + ' 天进入遗忘文件。'),
+      el('code', null, data.forgettingProjection.formula),
+      el('p', { style: { opacity: 0.72 } }, '这是当前半衰期和阈值下的数学估算；每次跨时间重复会延长实际保留时间。'),
+    ) : null,
     tabs,
     toolbar,
     notice ? el('p', { role: 'status' }, notice) : null,
