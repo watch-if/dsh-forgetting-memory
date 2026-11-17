@@ -56,8 +56,10 @@ function searchTerms(value) {
 }
 
 function escapeRegex(value) {
-  const special = new Set(['.', '+', '*', '?', '^', '
-
+  const slash = String.fromCharCode(92)
+  const special = new Set(['.', '+', '*', '?', '^', '$', '(', ')', '|', '[', ']', '{', '}', slash])
+  return [...value].map(char => special.has(char) ? slash + char : char).join('')
+}
 function entriesFromMemeSource(source, maxEntries = 2500) {
   const entries = []
   if (Array.isArray(source)) {
