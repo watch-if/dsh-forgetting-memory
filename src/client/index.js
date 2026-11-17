@@ -136,8 +136,8 @@ function MemoryAdminCard(props) {
     )
   } else if (view === 'relationships') {
     toolbar = el('div', null,
-      button('加入核心关系', () => { void act('pinRelation', true) }, selected.size === 0),
-      button('移出核心关系', () => { void act('pinRelation', false) }, selected.size === 0),
+      button('固定为核心', () => { void act('pinRelation', true) }, selected.size === 0),
+      button('取消固定', () => { void act('pinRelation', false) }, selected.size === 0),
     )
   } else {
     toolbar = el('div', null,
