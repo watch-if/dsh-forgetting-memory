@@ -89,7 +89,7 @@ function memePhrase(text, scope, lexicon) {
   return null
 }
 
-function localClassification(text) {
+function localClassification(text, recentMessages = []) {
   const value = String(text || '').trim()
   if (!value) return null
   if (/(听说|据说|传闻|小道消息|有人说|网传)/.test(value)) return { kind: 'rumor', confidence: 0.72, importance: 0.3 }
@@ -102,6 +102,12 @@ function localClassification(text) {
   }
   if (/^(哈哈+|呵呵+|hhh+|xswl|笑死|233+|😂+|🤣+)$/i.test(value)) {
     return { kind: 'joke', confidence: 0.62, importance: 0.1 }
+  }
+  const key = normalized(value)
+  const repeated = recentMessages.filter(message => normalized(message.text) === key)
+  const authors = new Set(repeated.map(message => message.authorId))
+  if (key.length > 0 && key.length <= 18 && repeated.length >= 2 && authors.size >= 2) {
+    return { kind: 'joke', confidence: 0.56, importance: 0.14 }
   }
   return null
 }
@@ -411,10 +417,15 @@ export class MemoryEngine {
     const { ready, rest } = this.#takeReadyPending(at, force)
     this.state.pending = rest
     const processed = []
+    const recentByScope = new Map()
     for (let i = 0; i < ready.length; i++) {
       const item = ready[i]
       try {
-        const memory = await this.#process(item)
+        const periodKey = item.channel + '\u0000' + item.scope
+        const recentMessages = recentByScope.get(periodKey) || []
+        const memory = await this.#process(item, { recentMessages: recentMessages.slice(-8) })
+        recentMessages.push({ authorId: item.authorId, at: item.at, text: item.text })
+        recentByScope.set(periodKey, recentMessages)
         processed.push({ item, memory, summary: memory.summary, kind: memory.kind })
         this.state.processedIds.push(messageKey(item))
       } catch (error) {
@@ -460,11 +471,11 @@ export class MemoryEngine {
     return { processed: ready.length, deferred: rest.length, memories: this.state.memories.length }
   }
 
-  async #process(item) {
+  async #process(item, { recentMessages = [] } = {}) {
     this.#trackRelation(item)
-    const raw = await this.classify(item)
+    const raw = await this.classify(item, { recentMessages })
     const supplied = raw && typeof raw === 'object' ? raw : {}
-    const local = localClassification(item.text)
+    const local = localClassification(item.text, recentMessages)
     const meme = memePhrase(item.text, item.scope, this.config.memeLexicon)
     let kind = KINDS.has(supplied.kind) ? supplied.kind : 'unknown'
     if (local && DURABLE.has(local.kind)) kind = local.kind
