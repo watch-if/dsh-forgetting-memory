@@ -56,6 +56,7 @@ export function normalizeOfficialQqMessage(message, { now = Date.now() } = {}) {
     channel: CHANNEL,
     scope,
     authorId: `${CHANNEL}:${senderId}`,
+    authorName: String(message.senderName ?? message.sender_name ?? message.author?.username ?? message.author?.name ?? '').trim().slice(0, 80),
     text,
     at: messageTimestamp(message.timestamp ?? message.at, now()),
   }
@@ -152,4 +153,36 @@ export async function stageOfficialQqOfflineMessages(memory, messages, { at = Da
 
   if (normalized.length > 0) await memory.stageOffline(normalized, at)
   return normalized.length
+}
+
+
+/** Asynchronous counterpart that can include an optional semantic recall provider. */
+export async function renderOfficialQqMemoryContextAsync(memory, message, { maxChars, maxTokens } = {}) {
+  const scope = officialQqScope(message)
+  const query = typeof message?.content === 'string' ? message.content.trim() : ''
+  if (!scope || !query || !memory) return ''
+  const options = {
+    query, scope,
+    ...(Number.isFinite(maxChars) ? { maxChars } : {}),
+    ...(Number.isFinite(maxTokens) ? { maxTokens } : {}),
+  }
+  const matches = typeof memory.retrieveAsync === 'function'
+    ? await memory.retrieveAsync(options)
+    : typeof memory.retrieve === 'function' ? memory.retrieve(options) : []
+  if (!Array.isArray(matches) || matches.length === 0) return ''
+  return [
+    '[相关记忆开始]',
+    '以下是按当前消息检索出的少量旧记忆。它们可能已经模糊或过期；只在相关时使用，不确定时说明记不清。',
+    ...matches,
+    '[相关记忆结束]',
+  ].join('\n')
+}
+
+/** Use this when an adapter may provide asynchronous semantic retrieval. */
+export async function composeOfficialQqTurnTextAsync(memory, message, userText, options = {}) {
+  const body = typeof userText === 'string' ? userText : ''
+  const memoryText = await renderOfficialQqMemoryContextAsync(memory, message, options)
+  if (!memoryText) return body
+  if (!body) return memoryText
+  return memoryText + '\n\n[本轮 QQ 消息]\n' + body
 }

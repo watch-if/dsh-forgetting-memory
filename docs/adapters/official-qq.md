@@ -65,7 +65,7 @@ export function setupMiddlewares(
 在 `src/transport/inbound.ts` 给 `handleInbound` 增加可选的 `forgettingMemory` 参数。完成现有门控和 `agentBody` 组装后、创建 `UserMessage` 前检索并合并摘要：
 
 ```ts
-import { composeOfficialQqTurnText } from 'dsh-forgetting-memory/adapters/official-qq'
+import { composeOfficialQqTurnTextAsync } from 'dsh-forgetting-memory/adapters/official-qq'
 import type { MemoryEngine } from 'dsh-forgetting-memory'
 
 export async function handleInbound(
@@ -74,7 +74,7 @@ export async function handleInbound(
 ): Promise<void> {
   // ...现有门控、会话获取和 agentBody 组装
   const turnBody = forgettingMemory
-    ? composeOfficialQqTurnText(forgettingMemory, msg, agentBody)
+    ? await composeOfficialQqTurnTextAsync(forgettingMemory, msg, agentBody)
     : agentBody
 
   const content: ContentBlock[] = [{ type: 'text', text: turnBody }]
@@ -83,9 +83,9 @@ export async function handleInbound(
 }
 ```
 
-只在确实创建 Agent 回合时检索；未 @ 的群消息只被本地采集，不会触发记忆检索或模型调用。检索摘要并入当前用户消息，不额外注册 DSH 动态 `systemPrompt.context()`：DSH 会将动态 context 快照写入会话历史，卸载注册项不会删掉已记录的快照。默认记忆预算为 800 个估算 token，并受设置页字符上限约束；这是插件注入记忆的上限，不包括 DSH 原有会话历史。它不是供应商 tokenizer 的精确计数。普通检索不读取日记角落和 `forgotten.jsonl`。
+只在确实创建 Agent 回合时检索；未 @ 的群消息只被本地采集，不会触发记忆检索或模型调用。检索摘要并入当前用户消息，不额外注册 DSH 动态 `systemPrompt.context()`：DSH 会将动态 context 快照写入会话历史，卸载注册项不会删掉已记录的快照。默认记忆预算为 800 个估算 token，并受设置页字符上限约束；这是插件注入记忆的上限，不包括 DSH 原有会话历史。默认使用本地估算；若宿主提供 `countTokens(text)` 回调，则预算按该模型 tokenizer 计数。普通检索不读取日记角落和 `forgotten.jsonl`。
 
-当前检索使用按 scope 构建的本地倒排索引和中文双字匹配，不调用模型；只搜索海马体、活动笔记和日记摘要，并受设置页的 token 与字符预算约束。日记全文按日记 ID 显式读取，遗忘文件与日记角落不进入普通检索。
+当前默认检索使用按 scope 构建的本地倒排索引和中文双字匹配，不调用模型；可由接入方提供 `semanticRecall({ query, scope, limit })` 异步回调追加语义候选。只搜索海马体、活动笔记和日记摘要，并受设置页的 token 与字符预算约束。日记全文按日记 ID 显式读取，遗忘文件与日记角落不进入普通检索。
 
 ## 在 QQ 通道中触发休眠
 

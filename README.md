@@ -1,25 +1,25 @@
 # dsh-forgetting-memory
 
-面向 DSH 的 QQ 聊天分层记忆插件，以强化与选择性遗忘为核心。记忆核心和 QQ 通道适配层分开；当前分支提供核心、DSH 设置页和官方 QQ 适配接口。
+面向 DSH 的 QQ 聊天分层记忆插件，以强化与选择性遗忘为核心。记忆核心和 QQ 通道适配层分开；当前实现分支提供核心、DSH 设置页、官方 QQ 辅助适配和 OneBot v11/v12 适配器；官方 QQ 自动采集仍需 QQ 通道提供挂点。
 
 ## 当前功能
 
-- 默认每 10 分钟整理一次。整理、索引和遗忘计算在本地运行，不主动调用模型。
+- 默认每 10 分钟整理一次。整理、索引和遗忘计算在本地运行，不主动调用模型；DSH 卸载插件时会尽力休眠整理未处理队列。
 - DSH 插件配置页提供整理间隔、静默间歇开关、静默时长、最长分段、离线暂存 TTL、遗忘阈值、关系圈容量和记忆预算等设置。
-- 设置页里的“记忆管理”卡片可以分页查看遗忘记录、批量删除或转入日记角落、清空遗忘文件、删除角落/日记条目，并管理笔记任务状态。
+- 设置页里的“记忆管理”卡片可分页查看/处理遗忘记录、日记角落和日记，管理笔记任务与关系圈核心成员，并查看当前参数下的遗忘曲线估算。
 - 笔记按 active、completed、cancelled 管理；已完成或取消的任务不进入普通检索。日记先检索短摘要，全文按需展开。日记角落和遗忘文件不会被普通检索选中。
 - 遗忘文件保存一段整理时间的总体短摘要，不保存可供模型回看的完整聊天。转入日记角落也只保存这条短摘要。
-- 默认每轮记忆预算为 800 个估算 token。中文按字符估算、其他字符按约四字符一个 token；这不是任何模型供应商的精确 tokenizer。普通聊天历史仍由 DSH 自己管理。
+- 默认每轮记忆预算为 800 个估算 token；宿主可注入 `countTokens(text)` 使用模型 tokenizer 计数。该预算只约束插件注入内容，普通聊天历史仍由 DSH 自己管理。
 - 中文检索使用本地分词和双字组合索引，按相关度、层级、重要度和近期程度排序；只注入命中的少量摘要。
 - 关系圈默认为 12。用户可在设置页自定义；超过 30 会提示留意上下文预算，不强行截断。
-- 高置信目标、承诺、边界、偏好和人物可进入笔记本。少数明确中文表达可由本地规则识别；未识别的语义仍可由可选 `classify` 回调补充。
-- 可按群配置梗词典。命中词典只会成为“群梗”候选，不会仅凭一个词就删除消息或永久判成玩笑；群梗按群聚合，不归到单个成员名下。
+- 对明确承诺、边界、目标、偏好和传闻有可解释的本地规则；高置信条目可进入笔记本。群聊的复杂语义仍可由可选 `classify(message)` 回调补充，本地规则不会自动把模糊表达升格为长期事实。
+- 可按群配置带别名的梗词典；相同梗的多种说法会合并为群级“梗候选”，统计跨时段使用情况。命中词典不会直接删除消息，也不会覆盖明确的承诺或边界。
 
 ## 整理方式
 
 默认固定模式每 10 分钟处理当前队列。实验性的静默模式按群/私聊 scope 切分：出现达到设置时长的消息间歇后整理上一段；若一直没有间歇，则在“最长分段”到达时兜底整理。这个边界只看消息时间间隔，不代表插件理解了语义话题。
 
-每次整理由本地规则和可选分类回调生成条目。一个整理段的短摘要由其中去重后的摘要候选组成，最多保留 4 个要点；这是本地拼接/截短，不会调用模型生成新的自然语言总结。若需要更好的段落语义摘要，可由接入方通过 `classify(message)` 提供简短 summary。
+每次整理由本地规则和可选分类回调生成条目。段落短摘要由去重、按类别重要度排序后的代表性要点组成，最多保留 4 项；默认不调用模型。需要模型生成段落总结时，接入方可显式提供 `summarizePeriod({ scope, messages, fallback, maxChars })` 回调，未配置时不会产生模型调用。
 
 ## DSH 设置页与文件管理
 
@@ -34,19 +34,19 @@
 
 插件默认的 `ownerId` 是占位值 `owner:unconfigured`。使用前请填入实际操作者 ID（官方 QQ 使用对应 OpenID 命名空间，例如 `qqbot:<openid>`；OneBot 用其独立命名空间）。`sleepAuthorizedIdsJson` 可填入允许发出休眠整理指令的 ID JSON 数组；owner 始终保留权限，人数由使用者决定，例如 `["qqbot:亲近成员OpenID"]`。QQ 适配层触发休眠时把发起者 OpenID 作为 `actorId` 传入，核心会校验授权。修改 `ownerId` 或 `dataDir` 后需要重新加载插件。设置页的归档管理 API 由 DSH Connection 限制为 owner peer，并提供“现在休眠整理”按钮。
 
-梗词典使用 JSON 字符串配置，例如：
+梗词典使用 JSON 字符串配置。数组形式兼容旧配置；对象形式可把多个说法归为一个群梗：
 
 ```json
-{"*":["通用梗"],"group:群OpenID":["仅此群使用的梗","另一个梗"]}
+{"*":["通用梗"],"group:群OpenID":{"只因":{"aliases":["鸡你太美","只因"]},"群内黑话":["缩写A","缩写B"]}}
 ```
 
-scope 必须与适配器实际传入的值完全一致。表情包只有在 QQ/OneBot 适配器事件提供名称、类型或 ID 时才能保存为文本线索；记忆插件不会发送或替换表情包。
+梗词典支持旧数组格式，也支持“标准梗名 → aliases/description”结构。可先从 [CHIME 数据集](https://github.com/yuboxie/chime) 下载 `chime_full.json`，再运行 `node scripts/import-chime-lexicon.mjs ./chime_full.json 'group:你的群ID' > group-memes.json` 生成候选配置。转换器默认跳过脏话或冒犯条目，且不会把 CHIME 数据随插件分发；导入后先抽查准确性，建议只配置在实际使用的群。表情包只有在 QQ/OneBot 适配器事件提供名称、类型或 ID 时才能保存为文本线索；记忆插件不会发送或替换表情包。
 
 ## 检索、预算与分层
 
-`retrieve({ query, scope })` 默认只检索海马体、活动笔记和日记摘要，不读遗忘文件，也不自动检索日记角落。完整日记通过 `readDiary({ id, scope })` 按 ID 展开。检索先按群/私聊 scope 与可见范围过滤，再用本地倒排索引和中文双字词项做相关性排序，最后受字符上限和 token 预算双重约束。
+`retrieve({ query, scope })` 默认只检索海马体、活动笔记和日记摘要，不读遗忘文件，也不自动检索日记角落。完整日记通过 `readDiary({ id, scope })` 按 ID 展开。检索先按群/私聊 scope 与可见范围过滤，再用本地倒排索引和中文双字词项做相关性排序，最后受字符上限和 token 预算双重约束。异步 `retrieveAsync()` 可合并接入方提供的语义候选；默认仍只做本地词项检索，不产生外部模型或向量服务调用。
 
-800 token 是插件交给模型的记忆预算，不包含 DSH 原有会话历史或人设提示词。它是本地估算值，实际账单 token 会随模型 tokenizer、语言和消息格式变化。设置更大的预算只会让更多相关记忆有机会进入本轮，不会把整份笔记或日记塞进上下文。
+800 token 是插件交给模型的记忆预算，不包含 DSH 原有会话历史或人设提示词。默认按字符估算；注入宿主的 `countTokens(text)` 后可按当前模型 tokenizer 计数。设置页展示按半衰期公式计算的角落/遗忘时间估算，不代表真实群聊中的确定预测。设置更大的预算只会让更多相关记忆有机会进入本轮，不会把整份笔记或日记塞进上下文。
 
 `state.json` 保存活跃记忆和日记详情；`inbox.jsonl` 暂存待整理消息；`forgotten.jsonl` 保存已遗忘条目的总体短摘要。清理或转存归档时会保留数据目录中的其他文件。
 
@@ -56,9 +56,9 @@ scope 必须与适配器实际传入的值完全一致。表情包只有在 QQ/O
 
 表情包的发送和选择继续由原 QQ/OneBot 插件负责。记忆层不会拦截发送；它只会在适配器事件确实提供贴图名称、GIF 类型或 ID 时，保存类似“表情包：xxx”的索引线索。若接入事件只给出“图片”标记，就无法推断具体是哪张表情包。
 
-## 官方 QQ 适配
+## QQ 适配
 
-`official-qq-integration` 分支提供消息转换、中间件和按需检索上下文函数，接入说明见 [官方 QQ 适配器](docs/adapters/official-qq.md)。
+官方 QQ 的消息转换、中间件和异步检索函数见 [官方 QQ 适配器](docs/adapters/official-qq.md)。OneBot v11/v12 的事件转换、异步检索和可选离线历史回调见 [OneBot 适配器](docs/adapters/onebot.md)。
 
 记忆核心不会改写腾讯维护的 `dsh-qqbot`。当前官方通道没有向其他 DSH 插件公开原始入站消息挂点，因此要采集未 @ 机器人的普通群消息，仍需由官方通道维护分支接入适配中间件；单独安装核心无法绕过这个接口边界。官方 QQ 使用 OpenID，不是 QQ 号。
 
@@ -91,9 +91,9 @@ const context = memory.retrieve({
 })
 ```
 
-可选 `classify(message)` 返回 `{ kind, key, summary, clue, importance, confidence }`。支持 `goal`、`commitment`、`boundary`、`preference`、`person`、`event`、`joke`、`rumor` 和 `unknown`。传闻只会标成待证线索；多人提及后会显示为“多人提及，仍待确认”，不会自动改写成确定事实。一个词条本身永远不足以自动删除或归档。
+可选 `classify(message, { recentMessages })` 返回 `{ kind, key, summary, clue, importance, confidence }`。支持 `goal`、`commitment`、`boundary`、`preference`、`person`、`event`、`joke`、`rumor` 和 `unknown`。还可提供 `summarizePeriod({ scope, messages, fallback, maxChars })`、`semanticRecall({ query, scope, limit })` 与 `countTokens(text)` 回调；三者均未配置时不会调用模型或外部检索服务。异步通道适配器使用 `retrieveAsync()` 合并语义候选，核心会再次按 scope 校验，禁止跨群或私聊泄漏。传闻只会标成待证线索；多人提及后仍显示“多人提及，仍待确认”，不会自动改写成确定事实。一个词条本身永远不足以自动删除或归档。
 
-离线候选可用 `offlinePreview({ scope })` 查看，再将选中的消息 ID 交给 `reviewOffline(ids, { scope })`。笔记状态可用 `setNotebookStatus(id, status)` 更新。经授权的操作者可调用 `sleep({ actorId })`；休眠会强制整理当前未完成分段。遗忘文件可通过 `forgottenRecords({ limit, offset })` 分页读取，并用 `archiveAction('delete'|'corner', ids)` 批量处理或 `archiveAction('clear')` 清空。
+`forgettingProjection({ score, reinforcements })` 按当前半衰期与阈值返回进入角落/遗忘区的预计天数；这是无再次强化假设下的数学估算。离线候选可用 `offlinePreview({ scope })` 查看，再将选中的消息 ID 交给 `reviewOffline(ids, { scope })`。笔记状态可用 `setNotebookStatus(id, status)` 更新。经授权的操作者可调用 `sleep({ actorId })`；休眠会强制整理当前未完成分段。遗忘文件可通过 `forgottenRecords({ limit, offset })` 分页读取，并用 `archiveAction('delete'|'corner', ids)` 批量处理或 `archiveAction('clear')` 清空。
 
 ## 记忆产品借鉴
 

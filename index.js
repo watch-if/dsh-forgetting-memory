@@ -16,14 +16,31 @@ function readValue(value, fallback) {
 }
 
 function parseMemeLexicon(config) {
-  const raw = readValue(config.memeLexiconJson, '{}')
-  if (config.memeLexicon && typeof config.memeLexicon === 'object') return config.memeLexicon
+  const raw = readValue(config.memeLexiconJson, config.memeLexicon || '{}')
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
     const clean = {}
-    for (const [scope, phrases] of Object.entries(parsed)) {
-      if (Array.isArray(phrases)) clean[scope] = phrases.filter(x => typeof x === 'string' && x.trim()).slice(0, 500)
+    for (const [scope, definitions] of Object.entries(parsed)) {
+      if (Array.isArray(definitions)) {
+        clean[scope] = definitions.filter(x => typeof x === 'string' && x.trim()).slice(0, 500)
+        continue
+      }
+      if (!definitions || typeof definitions !== 'object') continue
+      const entries = {}
+      for (const [canonical, definition] of Object.entries(definitions).slice(0, 500)) {
+        if (Array.isArray(definition)) {
+          entries[canonical] = definition.filter(x => typeof x === 'string' && x.trim()).slice(0, 50)
+        } else if (typeof definition === 'string' && definition.trim()) {
+          entries[canonical] = definition.trim()
+        } else if (definition && typeof definition === 'object' && Array.isArray(definition.aliases)) {
+          entries[canonical] = {
+            ...definition,
+            aliases: definition.aliases.filter(x => typeof x === 'string' && x.trim()).slice(0, 50),
+          }
+        }
+      }
+      clean[scope] = entries
     }
     return clean
   } catch {
@@ -83,9 +100,9 @@ function installAdminRoute(ctx, memory) {
           if (request.method === 'GET') {
             const url = new URL(request.url)
             const requested = url.searchParams.get('view')
-            const view = ['forgotten', 'corner', 'diary', 'notebook'].includes(requested) ? requested : 'forgotten'
+            const view = ['forgotten', 'corner', 'diary', 'notebook', 'relationships'].includes(requested) ? requested : 'forgotten'
             const offset = Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))
-            const base = { dataDir: memory.dataDir, forgottenPath: join(memory.dataDir, 'forgotten.jsonl'), warnings: memory.warnings() }
+            const base = { dataDir: memory.dataDir, forgottenPath: join(memory.dataDir, 'forgotten.jsonl'), warnings: memory.warnings(), forgettingProjection: memory.forgettingProjection() }
             if (view === 'forgotten') {
               const forgotten = await memory.forgottenRecords({ limit: ADMIN_PAGE_SIZE, offset })
               return jsonResponse({
@@ -94,10 +111,12 @@ function installAdminRoute(ctx, memory) {
                 notebook: [], notebookHasMore: false,
               })
             }
-            const all = memory.list(view).sort((a, b) => b.lastAt - a.lastAt)
+            const all = view === 'relationships'
+              ? memory.relationships().sort((a, b) => b.strength - a.strength)
+              : memory.list(view).sort((a, b) => b.lastAt - a.lastAt)
             const page = all.slice(offset, offset + ADMIN_PAGE_SIZE).map(item => ({
-              id: item.id, occurredAt: item.occurredAt, scope: item.scope,
-              summary: item.summary, status: item.status, kind: item.kind,
+              id: item.id, occurredAt: item.occurredAt || item.lastAt, scope: item.scope,
+              summary: item.summary || item.name || item.id, status: item.status || (item.pinned ? '固定核心关系' : item.core ? '活跃关系圈' : '普通关系'), kind: item.kind, pinned: item.pinned, core: item.core, strength: item.strength, interactions: item.interactions,
             }))
             const result = {
               ...base, forgotten: [], forgottenHasMore: false,
@@ -120,7 +139,10 @@ function installAdminRoute(ctx, memory) {
           else if (body?.action === 'delete' || body?.action === 'corner') result = await memory.archiveAction(body.action, ids)
           else if (body?.action === 'deleteCorner') result = { deleted: await memory.deleteMemories(ids, { layers: ['corner'] }) }
           else if (body?.action === 'deleteDiary') result = { deleted: await memory.deleteMemories(ids, { layers: ['diary'] }) }
-          else if (body?.action === 'setNotebookStatus') {
+          else if (body?.action === 'pinRelation') {
+            for (const id of ids) await memory.pinRelation(id, Boolean(body.pinned), memory.ownerId)
+            result = { changed: ids.length }
+          } else if (body?.action === 'setNotebookStatus') {
             let changed = 0
             for (const id of ids) if (await memory.setNotebookStatus(id, body.status)) changed++
             result = { changed }
@@ -144,10 +166,13 @@ export async function apply(ctx, config = {}) {
   const dataDir = configuredDir || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'forgetting-memory')
   const ownerId = readValue(config.ownerId, 'owner:unconfigured')
   const classify = typeof config.classify === 'function' ? config.classify : undefined
+  const summarizePeriod = typeof config.summarizePeriod === 'function' ? config.summarizePeriod : undefined
+  const semanticRecall = typeof config.semanticRecall === 'function' ? config.semanticRecall : undefined
+  const countTokens = typeof config.countTokens === 'function' ? config.countTokens : undefined
   const now = typeof config.now === 'function' ? config.now : Date.now
   const settings = memorySettings(config)
   const memory = new MemoryEngine({
-    dataDir, ownerId, classify, now, ...settings,
+    dataDir, ownerId, classify, summarizePeriod, semanticRecall, countTokens, now, ...settings,
     configProvider: () => memorySettings(config),
   })
   await memory.open()
@@ -189,6 +214,7 @@ export async function apply(ctx, config = {}) {
     return () => {
       stopped = true
       clearTimeout(timer)
+      void memory.sleep({ actorId: ownerId }).catch(error => console.error('[forgetting-memory] shutdown flush failed:', error))
       withdraw?.()
     }
   })

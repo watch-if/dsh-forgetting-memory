@@ -8,6 +8,7 @@
     ".": "./index.js",
     "./client": "./lib/client.js",
     "./adapters/official-qq": "./src/adapters/official-qq.js",
+    "./adapters/onebot": "./src/adapters/onebot.js",
     "./package.json": "./package.json"
   },
   "keywords": [
@@ -21,6 +22,7 @@
     "src",
     "lib/client.js",
     "scripts/build-client.mjs",
+    "scripts/import-chime-lexicon.mjs",
     "README.md",
     "docs"
   ],
