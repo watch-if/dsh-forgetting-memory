@@ -871,6 +871,7 @@ export class MemoryEngine {
     if (this.config.relationCapacity > 30) warnings.push('关系圈容量超过 30；请留意每轮上下文预算。')
     if (this.config.memoryTokenBudget > 2000) warnings.push('单轮记忆预算超过 2000 token；请留意长期上下文增长。')
     if (!(this.config.forgetThreshold < this.config.cornerThreshold && this.config.cornerThreshold < this.config.diaryThreshold)) warnings.push('遗忘、日记角落和日记阈值建议保持从低到高排列。')
+    if (Array.isArray(this.config.memeLexiconWarnings)) warnings.push(...this.config.memeLexiconWarnings)
     return warnings
   }
 }
