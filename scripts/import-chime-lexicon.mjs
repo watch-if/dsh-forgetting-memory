@@ -7,7 +7,7 @@ if (!inputPath || !scope) {
 } else {
   const includeSensitive = includeSensitiveFlag === '--include-sensitive'
   const root = JSON.parse(await readFile(inputPath, 'utf8'))
-  const rows = Array.isArray(root) ? root : Array.isArray(root?.data) ? root.data : Array.isArray(root?.memes) ? root.memes : null
+  const rows = Array.isArray(root) ? root : Array.isArray(root?.data) ? root.data : Array.isArray(root?.memes) ? root.memes : root && typeof root === 'object' ? [root] : null
   if (!rows) throw new TypeError('输入文件应为梗条目数组，或包含 data/memes 数组的对象。')
   const entries = {}
   let skippedSensitive = 0
@@ -29,6 +29,8 @@ if (!inputPath || !scope) {
       ...(row.type_cn ? { category: String(row.type_cn).slice(0, 32) } : {}),
       ...(sensitive ? { sensitive: true } : {}),
       source: 'CHIME',
+      sourceUrl: 'https://github.com/yuboxie/chime',
+      license: 'MIT',
     }
   }
   process.stdout.write(JSON.stringify({ [scope]: entries }, null, 2) + '\n')
