@@ -75,7 +75,7 @@ function memePhrase(text, scope, lexicon) {
             : []
       const clean = aliases.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim())
       const label = typeof definition?.label === 'string' && definition.label.trim() ? definition.label.trim() : canonical.trim()
-      if (label && clean.length) candidates.push({ canonical: label, aliases: [...new Set([label, ...clean])], description: typeof definition?.description === 'string' ? definition.description.trim().slice(0, 100) : '' })
+      if (label && clean.length) candidates.push({ canonical: label, aliases: [...new Set([label, ...clean])], description: typeof definition?.description === 'string' ? definition.description.trim().slice(0, 100) : '', sensitive: Boolean(definition?.sensitive) })
     }
   }
   add(lexicon?.['*'])
@@ -84,7 +84,7 @@ function memePhrase(text, scope, lexicon) {
   const body = normalized(text)
   for (const candidate of candidates) {
     const phrase = candidate.aliases.find(alias => body.includes(normalized(alias)))
-    if (phrase) return { canonical: candidate.canonical, phrase, description: candidate.description || '' }
+    if (phrase) return { canonical: candidate.canonical, phrase, description: candidate.description || '', sensitive: candidate.sensitive }
   }
   return null
 }
@@ -483,7 +483,7 @@ export class MemoryEngine {
     const textKey = normalized(item.text)
     const nearby = this.state.memories.find(x => x.scope === item.scope && x.authorId === item.authorId && x.textKey === textKey && item.at - x.lastAt <= this.config.intervalMs)
     if (nearby && textKey.length <= 12 && !DURABLE.has(kind)) kind = 'joke'
-    if (meme && !DURABLE.has(kind) && kind !== 'rumor') kind = 'joke'
+    if (meme && !meme.sensitive && !DURABLE.has(kind) && kind !== 'rumor') kind = 'joke'
     const key = String(supplied.key || (meme ? 'meme:' + normalized(meme.canonical) : textKey)).slice(0, 120)
     const communal = kind === 'joke' || kind === 'rumor'
     const scopedKey = communal
