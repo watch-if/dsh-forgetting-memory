@@ -84,10 +84,10 @@ export async function captureOneBotMessage(memory, event, {
   ignoreCommands = true,
 } = {}) {
   if (!memory || typeof memory.ingest !== 'function') throw new TypeError('a MemoryEngine-compatible service is required')
-  const raw = typeof event?.raw_message === 'string' ? event.raw_message.trim() : typeof event?.message === 'string' ? event.message.trim() : ''
-  if (ignoreCommands && /^\s*\/[A-Za-z][\w-]*(?:\s|$)/.test(raw)) return false
   const normalized = normalizeOneBotMessage(event, { now })
   if (!normalized) return false
+  const raw = typeof event?.raw_message === 'string' ? event.raw_message.trim() : normalized.text
+  if (ignoreCommands && /^\s*\/[^\s]+(?:\s|$)/.test(raw)) return false
   return memory.ingest(normalized)
 }
 
