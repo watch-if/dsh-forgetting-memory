@@ -804,6 +804,8 @@ export class MemoryEngine {
       daysToCorner: daysUntil(this.config.cornerThreshold),
       daysToForget: daysUntil(this.config.forgetThreshold),
       configuredHalfLifeDays: this.config.halfLifeMs / (24 * 60 * MINUTE),
+      cornerThreshold: this.config.cornerThreshold,
+      forgetThreshold: this.config.forgetThreshold,
     }
   }
 
