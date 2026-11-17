@@ -55,38 +55,84 @@ function searchTerms(value) {
   return [...terms]
 }
 
-function memePhrase(text, scope, lexicon) {
-  const candidates = []
-  const add = source => {
-    if (Array.isArray(source)) {
-      for (const value of source) {
-        if (typeof value === 'string' && value.trim()) candidates.push({ canonical: value.trim(), aliases: [value.trim()] })
-      }
-      return
+function escapeRegex(value) {
+  return value.replace(/[|\\{}()[\]^$+*?.-]/g, '\\$&')
+}
+
+function entriesFromMemeSource(source, maxEntries = 2500) {
+  const entries = []
+  if (Array.isArray(source)) {
+    for (const value of source.slice(0, maxEntries)) {
+      if (typeof value === 'string' && value.trim()) entries.push({ canonical: value.trim(), aliases: [value.trim()], description: '', sensitive: false })
     }
-    if (!source || typeof source !== 'object') return
-    for (const [canonical, definition] of Object.entries(source)) {
-      const aliases = typeof definition === 'string'
-        ? [definition]
-        : Array.isArray(definition)
-          ? definition
-          : Array.isArray(definition?.aliases)
-            ? definition.aliases
-            : []
-      const clean = aliases.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim())
-      const label = typeof definition?.label === 'string' && definition.label.trim() ? definition.label.trim() : canonical.trim()
-      if (label && clean.length) candidates.push({ canonical: label, aliases: [...new Set([label, ...clean])], description: typeof definition?.description === 'string' ? definition.description.trim().slice(0, 100) : '', sensitive: Boolean(definition?.sensitive) })
+    return entries
+  }
+  if (!source || typeof source !== 'object') return entries
+  for (const [canonical, definition] of Object.entries(source).slice(0, maxEntries)) {
+    const aliases = typeof definition === 'string'
+      ? [definition]
+      : Array.isArray(definition)
+        ? definition
+        : Array.isArray(definition?.aliases)
+          ? definition.aliases
+          : []
+    const clean = aliases.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()).slice(0, 20)
+    const label = typeof definition?.label === 'string' && definition.label.trim() ? definition.label.trim() : canonical.trim()
+    if (label && clean.length) entries.push({
+      canonical: label,
+      aliases: [...new Set([label, ...clean])],
+      description: typeof definition?.description === 'string' ? definition.description.trim().slice(0, 100) : '',
+      sensitive: Boolean(definition?.sensitive),
+    })
+  }
+  return entries
+}
+
+function compileMemePattern(entries) {
+  const aliasOwners = new Map()
+  let totalAliases = 0
+  for (const entry of entries) {
+    for (const alias of entry.aliases) {
+      const key = normalized(alias)
+      if (!key || aliasOwners.has(key)) continue
+      aliasOwners.set(key, entry)
+      if (++totalAliases >= 5000) break
+    }
+    if (totalAliases >= 5000) break
+  }
+  const aliases = [...aliasOwners.keys()].sort((a, b) => b.length - a.length)
+  return {
+    pattern: aliases.length ? new RegExp(aliases.map(escapeRegex).join('|'), 'u') : null,
+    aliasOwners,
+  }
+}
+
+function compileMemeLexicon(lexicon) {
+  const common = entriesFromMemeSource(lexicon?.['*'])
+  const commonPattern = compileMemePattern(common)
+  const scopes = new Map()
+  if (lexicon && typeof lexicon === 'object') {
+    for (const [scope, source] of Object.entries(lexicon)) {
+      if (scope === '*') continue
+      const local = entriesFromMemeSource(source)
+      scopes.set(scope, compileMemePattern([...local, ...common]))
     }
   }
-  add(lexicon?.['*'])
-  add(lexicon?.[scope])
-  candidates.sort((a, b) => Math.max(...b.aliases.map(x => x.length)) - Math.max(...a.aliases.map(x => x.length)))
-  const body = normalized(text)
-  for (const candidate of candidates) {
-    const phrase = candidate.aliases.find(alias => body.includes(normalized(alias)))
-    if (phrase) return { canonical: candidate.canonical, phrase, description: candidate.description || '', sensitive: candidate.sensitive }
-  }
-  return null
+  return { common: commonPattern, scopes }
+}
+
+function memePhrase(text, scope, compiled) {
+  const matcher = compiled?.scopes?.get(scope) || compiled?.common
+  if (!matcher?.pattern) return null
+  const match = matcher.pattern.exec(normalized(text))
+  if (!match) return null
+  const candidate = matcher.aliasOwners.get(match[0])
+  return candidate ? {
+    canonical: candidate.canonical,
+    phrase: match[0],
+    description: candidate.description || '',
+    sensitive: candidate.sensitive,
+  } : null
 }
 
 function localClassification(text, recentMessages = []) {
@@ -164,6 +210,7 @@ export class MemoryEngine {
     this.summarizePeriod = typeof summarizePeriod === 'function' ? summarizePeriod : null
     this.semanticRecall = typeof semanticRecall === 'function' ? semanticRecall : null
     this.countTokens = typeof countTokens === 'function' ? countTokens : null
+    this.memeLexiconCache = { signature: null, compiled: null }
     this.now = now
     this.configProvider = configProvider
     const baseConfig = { ...DEFAULTS, ...config }
@@ -471,12 +518,21 @@ export class MemoryEngine {
     return { processed: ready.length, deferred: rest.length, memories: this.state.memories.length }
   }
 
+  #compiledMemeLexicon() {
+    const lexicon = this.config.memeLexicon || {}
+    const signature = JSON.stringify(lexicon)
+    if (signature !== this.memeLexiconCache.signature) {
+      this.memeLexiconCache = { signature, compiled: compileMemeLexicon(lexicon) }
+    }
+    return this.memeLexiconCache.compiled
+  }
+
   async #process(item, { recentMessages = [] } = {}) {
     this.#trackRelation(item)
     const raw = await this.classify(item, { recentMessages })
     const supplied = raw && typeof raw === 'object' ? raw : {}
     const local = localClassification(item.text, recentMessages)
-    const meme = memePhrase(item.text, item.scope, this.config.memeLexicon)
+    const meme = memePhrase(item.text, item.scope, this.#compiledMemeLexicon())
     let kind = KINDS.has(supplied.kind) ? supplied.kind : 'unknown'
     if (local && DURABLE.has(local.kind)) kind = local.kind
     else if (kind === 'unknown' && local) kind = local.kind
