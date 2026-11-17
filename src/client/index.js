@@ -182,7 +182,7 @@ function MemoryAdminCard(props) {
     el('p', { style: { opacity: 0.72 } }, '遗忘文件保存每个整理时间段的总体短摘要，不参与 AI 自动检索。转入角落也只转入这条摘要；日记详情按需展开。'),
     data?.forgettingProjection ? el('details', null,
       el('summary', null, '查看遗忘曲线预估'),
-      el('p', null, '默认权重 0.7、没有再次强化：约 ' + data.forgettingProjection.daysToCorner.toFixed(1) + ' 天进入日记角落，约 ' + data.forgettingProjection.daysToForget.toFixed(1) + ' 天进入遗忘文件。'),
+      el('p', null, '示例权重 0.7、没有再次强化：约 ' + data.forgettingProjection.daysToCorner.toFixed(1) + ' 天进入日记角落，约 ' + data.forgettingProjection.daysToForget.toFixed(1) + ' 天进入遗忘文件。'),
       el('code', null, data.forgettingProjection.formula),
       el('p', { style: { opacity: 0.72 } }, '这是当前半衰期和阈值下的数学估算；每次跨时间重复会延长实际保留时间。'),
     ) : null,
