@@ -75,7 +75,7 @@ function memePhrase(text, scope, lexicon) {
             : []
       const clean = aliases.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim())
       const label = typeof definition?.label === 'string' && definition.label.trim() ? definition.label.trim() : canonical.trim()
-      if (label && clean.length) candidates.push({ canonical: label, aliases: [...new Set([label, ...clean])] })
+      if (label && clean.length) candidates.push({ canonical: label, aliases: [...new Set([label, ...clean])], description: typeof definition?.description === 'string' ? definition.description.trim().slice(0, 100) : '' })
     }
   }
   add(lexicon?.['*'])
@@ -84,7 +84,7 @@ function memePhrase(text, scope, lexicon) {
   const body = normalized(text)
   for (const candidate of candidates) {
     const phrase = candidate.aliases.find(alias => body.includes(normalized(alias)))
-    if (phrase) return { canonical: candidate.canonical, phrase }
+    if (phrase) return { canonical: candidate.canonical, phrase, description: candidate.description || '' }
   }
   return null
 }
@@ -495,7 +495,7 @@ export class MemoryEngine {
       : (local && local.kind === kind ? local.confidence : (meme && kind === 'joke' ? 0.55 : 0))
     const durable = DURABLE.has(kind) && confidence >= 0.8
     const visibility = item.scope.startsWith('private:') ? 'private' : 'group'
-    const fallbackSummary = meme && kind === 'joke' ? '群梗候选「' + meme.canonical + '」' : item.text
+    const fallbackSummary = meme && kind === 'joke' ? '群梗候选「' + meme.canonical + '」' + (meme.description ? '：' + meme.description : '') : item.text
     const summary = String(supplied.summary || fallbackSummary).trim().slice(0, durable ? 240 : 180)
     const importance = Number.isFinite(supplied.importance) ? Math.max(0, Math.min(1, supplied.importance)) : (local?.importance ?? 0.5)
     if (existing) {
@@ -506,6 +506,7 @@ export class MemoryEngine {
         existing.jokeAuthors = existing.jokeAuthors.slice(-20)
         existing.score = Math.min(0.9, existing.score + (existing.jokeAuthors.length > 1 ? 0.04 : 0.01))
         existing.memeKey ||= meme?.canonical
+        existing.memeHint ||= meme?.description
       } else if (kind === 'rumor') {
         existing.rumorSources ||= []
         if (!existing.rumorSources.includes(item.authorId)) existing.rumorSources.push(item.authorId)
@@ -518,7 +519,7 @@ export class MemoryEngine {
       }
       existing.lastAt = Math.max(existing.lastAt, item.at)
       existing.summary = kind === 'joke' && (meme?.canonical || existing.memeKey)
-        ? '群梗候选「' + (meme?.canonical || existing.memeKey) + '」' + (existing.jokeUses > 1 ? '（' + existing.jokeUses + ' 次，' + (existing.jokeAuthors?.length || 1) + ' 人）' : '')
+        ? '群梗候选「' + (meme?.canonical || existing.memeKey) + '」' + ((meme?.description || existing.memeHint) ? '：' + (meme?.description || existing.memeHint) : '') + (existing.jokeUses > 1 ? '（' + existing.jokeUses + ' 次，' + (existing.jokeAuthors?.length || 1) + ' 人）' : '')
         : summary
       existing.importance = Math.max(Number(existing.importance) || 0, importance)
       const oldDetail = String(existing.detail || '')
@@ -539,6 +540,7 @@ export class MemoryEngine {
       lastDecayAt: item.at, authorId: kind === 'joke' || kind === 'rumor' ? null : item.authorId,
       scope: item.scope, visibility, textKey, scopedKey, kind, summary, importance,
       memeKey: meme?.canonical,
+      memeHint: meme?.description,
       score: kind === 'joke' ? 0.35 : kind === 'rumor' ? 0.3 : 0.45 + 0.25 * importance,
       detail: item.text.slice(-this.config.maxDiaryChars),
       clue: String(supplied.clue || summary).slice(0, 80),
