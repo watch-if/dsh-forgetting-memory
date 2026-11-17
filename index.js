@@ -214,6 +214,7 @@ export async function apply(ctx, config = {}) {
     return () => {
       stopped = true
       clearTimeout(timer)
+      void memory.sleep({ actorId: ownerId }).catch(error => console.error('[forgetting-memory] shutdown flush failed:', error))
       withdraw?.()
     }
   })
