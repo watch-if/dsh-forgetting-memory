@@ -175,7 +175,7 @@ export async function renderOfficialQqMemoryContextAsync(memory, message, { maxC
     '以下是按当前消息检索出的少量旧记忆。它们可能已经模糊或过期；只在相关时使用，不确定时说明记不清。',
     ...matches,
     '[相关记忆结束]',
-  ].join('\\n')
+  ].join('\n')
 }
 
 /** Use this when an adapter may provide asynchronous semantic retrieval. */
@@ -184,5 +184,5 @@ export async function composeOfficialQqTurnTextAsync(memory, message, userText, 
   const memoryText = await renderOfficialQqMemoryContextAsync(memory, message, options)
   if (!memoryText) return body
   if (!body) return memoryText
-  return memoryText + '\\n\\n[本轮 QQ 消息]\\n' + body
+  return memoryText + '\n\n[本轮 QQ 消息]\n' + body
 }
