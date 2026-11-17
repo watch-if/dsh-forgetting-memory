@@ -74,7 +74,7 @@ export async function handleInbound(
 ): Promise<void> {
   // ...现有门控、会话获取和 agentBody 组装
   const turnBody = forgettingMemory
-    ? composeOfficialQqTurnText(forgettingMemory, msg, agentBody)
+    ? await composeOfficialQqTurnTextAsync(forgettingMemory, msg, agentBody)
     : agentBody
 
   const content: ContentBlock[] = [{ type: 'text', text: turnBody }]
