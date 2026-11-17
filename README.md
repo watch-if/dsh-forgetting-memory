@@ -40,7 +40,7 @@
 {"*":["通用梗"],"group:群OpenID":{"只因":{"aliases":["鸡你太美","只因"]},"群内黑话":["缩写A","缩写B"]}}
 ```
 
-scope 必须与适配器实际传入的值完全一致。表情包只有在 QQ/OneBot 适配器事件提供名称、类型或 ID 时才能保存为文本线索；记忆插件不会发送或替换表情包。
+梗词典支持旧数组格式，也支持“标准梗名 → aliases/description”结构。可先从 [CHIME 数据集](https://github.com/yuboxie/chime) 下载 `chime_full.json`，再运行 `node scripts/import-chime-lexicon.mjs ./chime_full.json 'group:你的群ID' > group-memes.json` 生成候选配置。转换器默认跳过脏话或冒犯条目，且不会把 CHIME 数据随插件分发；导入后先抽查准确性，建议只配置在实际使用的群。表情包只有在 QQ/OneBot 适配器事件提供名称、类型或 ID 时才能保存为文本线索；记忆插件不会发送或替换表情包。
 
 ## 检索、预算与分层
 
@@ -91,9 +91,9 @@ const context = memory.retrieve({
 })
 ```
 
-可选 `classify(message)` 返回 `{ kind, key, summary, clue, importance, confidence }`。支持 `goal`、`commitment`、`boundary`、`preference`、`person`、`event`、`joke`、`rumor` 和 `unknown`。还可提供 `summarizePeriod`、`semanticRecall({ query, scope, limit })` 与 `countTokens(text)` 回调；三者均未配置时不会调用模型或外部检索服务。传闻只会标成待证线索；多人提及后仍显示“多人提及，仍待确认”，不会自动改写成确定事实。一个词条本身永远不足以自动删除或归档。
+可选 `classify(message, { recentMessages })` 返回 `{ kind, key, summary, clue, importance, confidence }`。支持 `goal`、`commitment`、`boundary`、`preference`、`person`、`event`、`joke`、`rumor` 和 `unknown`。还可提供 `summarizePeriod({ scope, messages, fallback, maxChars })`、`semanticRecall({ query, scope, limit })` 与 `countTokens(text)` 回调；三者均未配置时不会调用模型或外部检索服务。异步通道适配器使用 `retrieveAsync()` 合并语义候选，核心会再次按 scope 校验，禁止跨群或私聊泄漏。传闻只会标成待证线索；多人提及后仍显示“多人提及，仍待确认”，不会自动改写成确定事实。一个词条本身永远不足以自动删除或归档。
 
-离线候选可用 `offlinePreview({ scope })` 查看，再将选中的消息 ID 交给 `reviewOffline(ids, { scope })`。笔记状态可用 `setNotebookStatus(id, status)` 更新。经授权的操作者可调用 `sleep({ actorId })`；休眠会强制整理当前未完成分段。遗忘文件可通过 `forgottenRecords({ limit, offset })` 分页读取，并用 `archiveAction('delete'|'corner', ids)` 批量处理或 `archiveAction('clear')` 清空。
+`forgettingProjection({ score, reinforcements })` 按当前半衰期与阈值返回进入角落/遗忘区的预计天数；这是无再次强化假设下的数学估算。离线候选可用 `offlinePreview({ scope })` 查看，再将选中的消息 ID 交给 `reviewOffline(ids, { scope })`。笔记状态可用 `setNotebookStatus(id, status)` 更新。经授权的操作者可调用 `sleep({ actorId })`；休眠会强制整理当前未完成分段。遗忘文件可通过 `forgottenRecords({ limit, offset })` 分页读取，并用 `archiveAction('delete'|'corner', ids)` 批量处理或 `archiveAction('clear')` 清空。
 
 ## 记忆产品借鉴
 
