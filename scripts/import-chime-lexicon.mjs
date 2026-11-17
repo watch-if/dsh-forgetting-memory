@@ -19,7 +19,7 @@ if (!inputPath || !scope) {
       skippedSensitive++
       continue
     }
-    const meaning = String(row.meaning ?? row.description ?? '').trim().replace(/\\s+/g, ' ').slice(0, 100)
+    const meaning = String(row.meaning ?? row.description ?? '').trim().replace(/\s+/g, ' ').slice(0, 100)
     entries[canonical] = {
       aliases: [canonical, ...(Array.isArray(row.aliases) ? row.aliases : [])]
         .filter(value => typeof value === 'string' && value.trim())
