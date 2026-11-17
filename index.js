@@ -116,7 +116,7 @@ function installAdminRoute(ctx, memory) {
               : memory.list(view).sort((a, b) => b.lastAt - a.lastAt)
             const page = all.slice(offset, offset + ADMIN_PAGE_SIZE).map(item => ({
               id: item.id, occurredAt: item.occurredAt || item.lastAt, scope: item.scope,
-              summary: item.summary || item.name || item.id, status: item.status || (item.core ? '核心关系' : '普通关系'), kind: item.kind, pinned: item.pinned, core: item.core, strength: item.strength, interactions: item.interactions,
+              summary: item.summary || item.name || item.id, status: item.status || (item.pinned ? '固定核心关系' : item.core ? '活跃关系圈' : '普通关系'), kind: item.kind, pinned: item.pinned, core: item.core, strength: item.strength, interactions: item.interactions,
             }))
             const result = {
               ...base, forgotten: [], forgottenHasMore: false,
