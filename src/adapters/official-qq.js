@@ -56,6 +56,7 @@ export function normalizeOfficialQqMessage(message, { now = Date.now() } = {}) {
     channel: CHANNEL,
     scope,
     authorId: `${CHANNEL}:${senderId}`,
+    authorName: String(message.senderName ?? message.sender_name ?? message.author?.username ?? message.author?.name ?? '').trim().slice(0, 80),
     text,
     at: messageTimestamp(message.timestamp ?? message.at, now()),
   }
