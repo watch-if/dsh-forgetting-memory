@@ -32,6 +32,18 @@ const turnText = await composeOneBotTurnTextAsync(
 
 把返回值作为本轮用户消息文本即可。不会改写 DSH 人设、系统提示词或其他插件注册的工具。旧记忆会标注可能模糊或过期。
 
+## 休眠整理命令
+
+接入方可在自己的命令权限检查后调用核心服务；核心仍会核对配置的授权 ID：
+
+```js
+await ctx.forgettingMemory.sleep({
+  actorId: `onebot:${event.user_id}`,
+})
+```
+
+DSH 插件卸载时会尽力整理剩余队列。电脑突然断电或进程被强制终止时，不能保证异步整理完成；原始队列会保存在本地 inbox 文件中，下一次启动后可继续处理。
+
 ## 离线消息恢复
 
 OneBot 的不同实现对历史消息 API 的支持不一致。需要由接入方提供读取函数；核心不会假定所有服务端都能补拉历史：
