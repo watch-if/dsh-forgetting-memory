@@ -305,9 +305,10 @@ export class MemoryEngine {
   #trackRelation(item) {
     let relation = this.state.relations.find(x => x.id === item.authorId)
     if (!relation) {
-      relation = { id: item.authorId, interactions: 0, lastAt: item.at, pinned: item.authorId === this.ownerId }
+      relation = { id: item.authorId, name: item.authorName || '', interactions: 0, lastAt: item.at, pinned: item.authorId === this.ownerId }
       this.state.relations.push(relation)
     }
+    if (typeof item.authorName === 'string' && item.authorName.trim()) relation.name = item.authorName.trim().slice(0, 80)
     // A dense burst counts once; repeated activity across time strengthens the relation.
     if (item.at - relation.lastAt >= this.config.intervalMs || relation.interactions === 0) relation.interactions++
     relation.lastAt = Math.max(relation.lastAt, item.at)
