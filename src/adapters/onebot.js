@@ -73,6 +73,7 @@ export function normalizeOneBotMessage(event, { now = Date.now } = {}) {
     channel: CHANNEL,
     scope: (isGroup ? 'group:' : 'private:') + peer,
     authorId: CHANNEL + ':' + author,
+    authorName: String(event.user_name ?? event.sender?.card ?? event.sender?.nickname ?? event.sender?.name ?? '').trim().slice(0, 80),
     text,
     at: timestampMs(event.time ?? event.timestamp ?? event.at, now),
   }
