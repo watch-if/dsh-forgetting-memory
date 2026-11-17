@@ -23,20 +23,20 @@ function parseMemeLexicon(config) {
     const clean = {}
     for (const [scope, definitions] of Object.entries(parsed)) {
       if (Array.isArray(definitions)) {
-        clean[scope] = definitions.filter(x => typeof x === 'string' && x.trim()).slice(0, 500)
+        clean[scope] = definitions.filter(x => typeof x === 'string' && x.trim()).slice(0, 2500)
         continue
       }
       if (!definitions || typeof definitions !== 'object') continue
       const entries = {}
-      for (const [canonical, definition] of Object.entries(definitions).slice(0, 500)) {
+      for (const [canonical, definition] of Object.entries(definitions).slice(0, 2500)) {
         if (Array.isArray(definition)) {
-          entries[canonical] = definition.filter(x => typeof x === 'string' && x.trim()).slice(0, 50)
+          entries[canonical] = definition.filter(x => typeof x === 'string' && x.trim()).slice(0, 20)
         } else if (typeof definition === 'string' && definition.trim()) {
           entries[canonical] = definition.trim()
         } else if (definition && typeof definition === 'object' && Array.isArray(definition.aliases)) {
           entries[canonical] = {
             ...definition,
-            aliases: definition.aliases.filter(x => typeof x === 'string' && x.trim()).slice(0, 50),
+            aliases: definition.aliases.filter(x => typeof x === 'string' && x.trim()).slice(0, 20),
           }
         }
       }
@@ -45,6 +45,17 @@ function parseMemeLexicon(config) {
     return clean
   } catch {
     return {}
+  }
+}
+
+function memeLexiconWarnings(config) {
+  const raw = readValue(config.memeLexiconJson, config.memeLexicon || '{}')
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ['梗词典应是按 scope 划分的 JSON 对象。']
+    return []
+  } catch {
+    return ['梗词典 JSON 格式无效，当前整理周期会跳过梗词匹配。']
   }
 }
 
@@ -80,6 +91,7 @@ function memorySettings(config) {
     archiveSummaryChars: Number(value('archiveSummaryChars', 180)),
     maxActivePerScope: Number(value('maxActivePerScope', 1000)),
     memeLexicon: parseMemeLexicon(config),
+    memeLexiconWarnings: memeLexiconWarnings(config),
   }
 }
 
