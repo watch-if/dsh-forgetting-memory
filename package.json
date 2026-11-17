@@ -6,11 +6,40 @@
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
+    "./client": "./lib/client.js",
     "./adapters/official-qq": "./src/adapters/official-qq.js",
     "./package.json": "./package.json"
   },
-  "keywords": ["dsh-plugin", "memory", "qq", "forgetting"],
-  "files": ["index.js", "src", "README.md", "docs"],
-  "engines": { "node": ">=22" },
-  "scripts": { "test": "node --test" }
+  "keywords": [
+    "dsh-plugin",
+    "memory",
+    "qq",
+    "forgetting"
+  ],
+  "files": [
+    "index.js",
+    "src",
+    "lib/client.js",
+    "scripts/build-client.mjs",
+    "README.md",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "build:client": "node scripts/build-client.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "*"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  }
 }

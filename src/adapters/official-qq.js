@@ -13,6 +13,14 @@ function attachmentMarkers(attachments) {
   if (!Array.isArray(attachments)) return []
   return attachments.map(item => {
     const type = String(item?.content_type ?? item?.contentType ?? item?.type ?? 'attachment')
+    const stickerName = item?.sticker_name ?? item?.stickerName ?? item?.emoji_name ?? item?.emojiName ?? item?.title
+    const fileName = item?.filename ?? item?.file_name ?? item?.name
+    const stickerId = item?.sticker_id ?? item?.stickerId ?? item?.emoji_id ?? item?.emojiId ?? item?.id
+    const isSticker = /sticker|emoji|gif/i.test(type) || Boolean(stickerName) || /\.gif$/i.test(String(fileName || ''))
+    if (isSticker) {
+      const label = String(stickerName ?? fileName ?? stickerId ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 48)
+      return label ? '[表情包：' + label + ']' : /gif/i.test(type) ? '[GIF]' : '[表情包]'
+    }
     if (/image|photo/i.test(type)) return '[图片]'
     if (/video/i.test(type)) return '[视频]'
     if (/audio|voice/i.test(type)) return '[语音]'
@@ -93,7 +101,7 @@ export function createOfficialQqMemoryMiddleware(memory, {
  * Build a compact, scope-filtered context snapshot for the current QQ turn.
  * The bridge should call this only for messages that actually trigger an Agent.
  */
-export function renderOfficialQqMemoryContext(memory, message, { maxChars } = {}) {
+export function renderOfficialQqMemoryContext(memory, message, { maxChars, maxTokens } = {}) {
   const scope = officialQqScope(message)
   const query = typeof message?.content === 'string' ? message.content.trim() : ''
   if (!scope || !query || !memory || typeof memory.retrieve !== 'function') return ''
@@ -102,6 +110,7 @@ export function renderOfficialQqMemoryContext(memory, message, { maxChars } = {}
     query,
     scope,
     ...(Number.isFinite(maxChars) ? { maxChars } : {}),
+    ...(Number.isFinite(maxTokens) ? { maxTokens } : {}),
   })
   if (!Array.isArray(matches) || matches.length === 0) return ''
 
@@ -119,9 +128,9 @@ export function renderOfficialQqMemoryContext(memory, message, { maxChars } = {}
  * composed into the turn instead of registered as a new prompt-context snapshot.
  * The host should call this only after it has decided to start an Agent turn.
  */
-export function composeOfficialQqTurnText(memory, message, userText, { maxChars } = {}) {
+export function composeOfficialQqTurnText(memory, message, userText, { maxChars, maxTokens } = {}) {
   const body = typeof userText === 'string' ? userText : ''
-  const memoryText = renderOfficialQqMemoryContext(memory, message, { maxChars })
+  const memoryText = renderOfficialQqMemoryContext(memory, message, { maxChars, maxTokens })
   if (!memoryText) return body
   if (!body) return memoryText
   return `${memoryText}\n\n[本轮 QQ 消息]\n${body}`
